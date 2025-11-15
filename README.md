@@ -1,6 +1,6 @@
 # AI Academy RAG Chatbot
 
-A Python 3.10-based chatbot application using Retrieval-Augmented Generation (RAG) to provide intelligent responses based on document knowledge bases.
+A Python 3.12-based chatbot application using Retrieval-Augmented Generation (RAG) to provide intelligent responses based on document knowledge bases.
 
 ## Features
 
@@ -29,7 +29,7 @@ ai-academy-rag-chatbot/
 
 ## Prerequisites
 
-- Python 3.10 or higher
+- Python 3.12 or higher
 - OpenAI API key (get one from [OpenAI Platform](https://platform.openai.com/))
 
 ## Setup Instructions
@@ -46,12 +46,14 @@ cd ai-academy-rag-chatbot
 Create and activate a virtual environment to isolate project dependencies:
 
 **On Linux/MacOS:**
+
 ```bash
 python3 -m venv venv
 source venv/bin/activate
 ```
 
 **On Windows:**
+
 ```bash
 python -m venv venv
 venv\Scripts\activate
@@ -66,6 +68,7 @@ pip install -r requirements.txt
 ```
 
 This will install:
+
 - `langchain` - Framework for building LLM applications
 - `openai` - OpenAI API client
 - `chromadb` - Vector database for embeddings
