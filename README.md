@@ -93,6 +93,29 @@ OPENAI_API_KEY=sk-your-actual-api-key-here
 
 ⚠️ **Important**: Never commit your `.env` file to version control. It's already listed in `.gitignore`.
 
+#### Configuration Options
+
+The application supports the following configuration parameters (all optional except `OPENAI_API_KEY`):
+
+**OpenAI API Settings:**
+- `OPENAI_API_KEY` (required): Your OpenAI API key from https://platform.openai.com/api-keys
+- `GPT_MODEL` (default: `gpt-4`): Model for answer generation. Options: `gpt-4`, `gpt-4-turbo`, `gpt-3.5-turbo`
+- `EMBEDDING_MODEL` (default: `text-embedding-3-small`): Model for embeddings. Options: `text-embedding-3-small`, `text-embedding-3-large`, `text-embedding-ada-002`
+- `WHISPER_MODEL` (default: `whisper-1`): Model for audio transcription
+
+**Directory Paths:**
+- `DATA_DIR` (default: `./data`): Location of source documents (PDFs and MP4 files)
+- `CHROMA_DB_DIR` (default: `./embeddings`): Vector database storage location
+
+**Text Processing:**
+- `CHUNK_SIZE` (default: `1000`): Maximum size of text chunks in characters. Larger chunks provide more context but may reduce retrieval precision.
+- `CHUNK_OVERLAP` (default: `200`): Character overlap between chunks to maintain context continuity
+
+**Retrieval:**
+- `TOP_K` (default: `5`): Number of most relevant chunks to retrieve per query. Higher values provide more context but increase token usage and cost.
+
+See `.env.example` for a complete configuration template with detailed comments.
+
 ## Usage
 
 (Coming soon - implementation in progress)
