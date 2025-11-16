@@ -40,6 +40,70 @@ def _get_openai_client() -> OpenAI:
     return _openai_client
 
 
+def _get_transcript_cache_path(mp4_path: Path, data_dir: Path) -> Path:
+    """Get the cache file path for a transcript.
+
+    Args:
+        mp4_path: Path to the MP4 file
+        data_dir: Data directory containing the MP4
+
+    Returns:
+        Path to the transcript cache file
+    """
+    transcripts_dir = data_dir / "transcripts"
+    # Use stem to get filename without extension, add .txt
+    return transcripts_dir / f"{mp4_path.stem}.txt"
+
+
+def _load_cached_transcript(cache_path: Path, mp4_path: Path) -> Optional[str]:
+    """Load transcript from cache if it exists and is newer than MP4.
+
+    Args:
+        cache_path: Path to cached transcript file
+        mp4_path: Path to original MP4 file
+
+    Returns:
+        Cached transcript text if valid, None otherwise
+    """
+    # Check if cache exists
+    if not cache_path.exists():
+        return None
+
+    # Check if cache is newer than MP4
+    cache_mtime = cache_path.stat().st_mtime
+    mp4_mtime = mp4_path.stat().st_mtime
+
+    if cache_mtime < mp4_mtime:
+        # Cache is outdated
+        return None
+
+    # Load and return cached transcript
+    try:
+        with open(cache_path, "r", encoding="utf-8") as f:
+            return f.read()
+    except Exception as e:
+        warnings.warn(f"Error reading cached transcript {cache_path}: {e}")
+        return None
+
+
+def _save_transcript_cache(cache_path: Path, transcript: str) -> None:
+    """Save transcript to cache file.
+
+    Args:
+        cache_path: Path to save transcript to
+        transcript: Transcript text to save
+    """
+    try:
+        # Create transcripts directory if it doesn't exist
+        cache_path.parent.mkdir(parents=True, exist_ok=True)
+
+        # Write transcript to file
+        with open(cache_path, "w", encoding="utf-8") as f:
+            f.write(transcript)
+    except Exception as e:
+        warnings.warn(f"Error saving transcript cache {cache_path}: {e}")
+
+
 # ============================================================================
 # Part A: PDF Processing
 # ============================================================================
@@ -263,22 +327,38 @@ def _load_mp4s(data_dir: Path) -> List[Document]:
     print(f"\nProcessing {len(mp4_files)} MP4 file(s)...")
     for mp4_path in tqdm(mp4_files, desc="Transcribing MP4s"):
         temp_audio_path = None
+        transcript = None
+
         try:
-            # Create temporary WAV file
-            with tempfile.NamedTemporaryFile(
-                suffix=".wav", delete=False
-            ) as temp_file:
-                temp_audio_path = Path(temp_file.name)
+            # Check for cached transcript first
+            cache_path = _get_transcript_cache_path(mp4_path, data_dir)
+            cached_transcript = _load_cached_transcript(cache_path, mp4_path)
 
-            # Step 1: Extract audio from MP4
-            print(f"\n  Extracting audio from {mp4_path.name}...")
-            _extract_audio_from_mp4(mp4_path, temp_audio_path)
+            if cached_transcript:
+                # Use cached transcript
+                print(f"\n  ✓ Using cached transcript for {mp4_path.name}")
+                transcript = cached_transcript
+            else:
+                # Need to transcribe
+                # Create temporary WAV file
+                with tempfile.NamedTemporaryFile(
+                    suffix=".wav", delete=False
+                ) as temp_file:
+                    temp_audio_path = Path(temp_file.name)
 
-            # Step 2: Transcribe with Whisper
-            print(f"  Transcribing {mp4_path.name} with Whisper...")
-            transcript = _transcribe_audio_with_whisper(temp_audio_path)
+                # Step 1: Extract audio from MP4
+                print(f"\n  Extracting audio from {mp4_path.name}...")
+                _extract_audio_from_mp4(mp4_path, temp_audio_path)
 
-            # Step 3: Create Document with metadata
+                # Step 2: Transcribe with Whisper
+                print(f"  Transcribing {mp4_path.name} with Whisper...")
+                transcript = _transcribe_audio_with_whisper(temp_audio_path)
+
+                # Step 3: Save transcript to cache
+                _save_transcript_cache(cache_path, transcript)
+                print(f"  ✓ {mp4_path.name}: transcribed {len(transcript)} characters")
+
+            # Create Document with metadata
             doc = Document(
                 page_content=transcript,
                 metadata={
@@ -288,8 +368,6 @@ def _load_mp4s(data_dir: Path) -> List[Document]:
                 },
             )
             all_documents.append(doc)
-
-            print(f"  ✓ {mp4_path.name}: transcribed {len(transcript)} characters")
 
         except Exception as e:
             warnings.warn(f"Error processing MP4 {mp4_path.name}: {e}")
