@@ -1,1 +1,476 @@
-"""Data loader module for ingesting documents."""
+"""Data loader module for ingesting documents.
+
+This module handles loading and processing of PDF and MP4 files:
+- PDF: Text extraction with page metadata
+- MP4: Audio extraction → Whisper transcription → text
+- All text is chunked into semantically meaningful pieces for embedding
+"""
+
+import os
+import tempfile
+from pathlib import Path
+from typing import List, Optional
+import warnings
+
+from langchain_core.documents import Document
+from langchain_community.document_loaders import PyPDFLoader
+from langchain_text_splitters import RecursiveCharacterTextSplitter
+from tqdm import tqdm
+import ffmpeg
+from openai import OpenAI
+
+from src.config import (
+    DATA_DIR,
+    CHUNK_SIZE,
+    CHUNK_OVERLAP,
+    OPENAI_API_KEY,
+    WHISPER_MODEL,
+)
+
+
+# Initialize OpenAI client for Whisper API
+_openai_client = None
+
+
+def _get_openai_client() -> OpenAI:
+    """Get or create OpenAI client (lazy initialization)."""
+    global _openai_client
+    if _openai_client is None:
+        _openai_client = OpenAI(api_key=OPENAI_API_KEY)
+    return _openai_client
+
+
+# ============================================================================
+# Part A: PDF Processing
+# ============================================================================
+
+
+def _load_pdfs(data_dir: Path) -> List[Document]:
+    """Load all PDF files from the data directory.
+
+    Args:
+        data_dir: Directory containing PDF files
+
+    Returns:
+        List of Document objects with text and metadata (source, page)
+    """
+    pdf_files = list(data_dir.glob("*.pdf"))
+    if not pdf_files:
+        warnings.warn(f"No PDF files found in {data_dir}")
+        return []
+
+    all_documents = []
+
+    print(f"\nLoading {len(pdf_files)} PDF file(s)...")
+    for pdf_path in tqdm(pdf_files, desc="Loading PDFs"):
+        try:
+            # Use LangChain's PyPDFLoader
+            loader = PyPDFLoader(str(pdf_path))
+            documents = loader.load()
+
+            # Add source filename to metadata
+            for doc in documents:
+                doc.metadata["source"] = pdf_path.name
+                doc.metadata["source_type"] = "pdf"
+
+            all_documents.extend(documents)
+            print(f"  ✓ {pdf_path.name}: {len(documents)} pages")
+
+        except Exception as e:
+            warnings.warn(f"Error loading PDF {pdf_path.name}: {e}")
+            continue
+
+    return all_documents
+
+
+# ============================================================================
+# Part B: MP4 Audio Transcription
+# ============================================================================
+
+
+def _extract_audio_from_mp4(mp4_path: Path, output_path: Path) -> None:
+    """Extract audio from MP4 file using ffmpeg.
+
+    Args:
+        mp4_path: Path to input MP4 file
+        output_path: Path to output audio file (WAV format)
+
+    Raises:
+        Exception: If ffmpeg extraction fails
+    """
+    try:
+        # Extract audio using ffmpeg-python
+        # Convert to mono, 16kHz (Whisper's preferred format)
+        (
+            ffmpeg
+            .input(str(mp4_path))
+            .output(
+                str(output_path),
+                acodec="pcm_s16le",  # PCM 16-bit
+                ac=1,  # Mono
+                ar="16000",  # 16kHz sample rate
+            )
+            .overwrite_output()
+            .run(quiet=True, capture_stdout=True, capture_stderr=True)
+        )
+    except ffmpeg.Error as e:
+        raise Exception(f"ffmpeg error: {e.stderr.decode()}")
+
+
+def _split_audio_file(audio_path: Path, chunk_duration_seconds: int = 600) -> List[Path]:
+    """Split large audio file into smaller chunks.
+
+    Args:
+        audio_path: Path to audio file to split
+        chunk_duration_seconds: Duration of each chunk in seconds (default: 10 minutes)
+
+    Returns:
+        List of paths to audio chunk files
+    """
+    # Check file size first
+    file_size_mb = audio_path.stat().st_size / (1024 * 1024)
+
+    # If file is under 24 MB (leaving 1 MB safety margin), no need to split
+    if file_size_mb < 24:
+        return [audio_path]
+
+    print(f"    Audio file is {file_size_mb:.1f} MB, splitting into chunks...")
+
+    # Create temporary directory for chunks
+    temp_dir = Path(tempfile.mkdtemp(prefix="audio_chunks_"))
+    chunk_paths = []
+
+    try:
+        # Get audio duration
+        probe = ffmpeg.probe(str(audio_path))
+        duration = float(probe['format']['duration'])
+
+        # Calculate number of chunks needed
+        num_chunks = int(duration / chunk_duration_seconds) + 1
+
+        print(f"    Splitting {duration:.0f}s audio into {num_chunks} chunks of ~{chunk_duration_seconds}s each...")
+
+        # Split audio into chunks
+        for i in range(num_chunks):
+            start_time = i * chunk_duration_seconds
+            chunk_path = temp_dir / f"chunk_{i:03d}.wav"
+
+            (
+                ffmpeg
+                .input(str(audio_path), ss=start_time, t=chunk_duration_seconds)
+                .output(
+                    str(chunk_path),
+                    acodec="pcm_s16le",
+                    ac=1,
+                    ar="16000",
+                )
+                .overwrite_output()
+                .run(quiet=True, capture_stdout=True, capture_stderr=True)
+            )
+
+            if chunk_path.exists() and chunk_path.stat().st_size > 0:
+                chunk_paths.append(chunk_path)
+
+        print(f"    Created {len(chunk_paths)} audio chunks")
+        return chunk_paths
+
+    except Exception as e:
+        # Clean up on error
+        for chunk in chunk_paths:
+            if chunk.exists():
+                os.unlink(chunk)
+        if temp_dir.exists():
+            os.rmdir(temp_dir)
+        raise Exception(f"Error splitting audio: {e}")
+
+
+def _transcribe_audio_with_whisper(audio_path: Path) -> str:
+    """Transcribe audio file using OpenAI Whisper API.
+
+    Handles large files by automatically splitting them into chunks.
+
+    Args:
+        audio_path: Path to audio file (WAV, MP3, etc.)
+
+    Returns:
+        Transcribed text
+
+    Raises:
+        Exception: If Whisper API call fails
+    """
+    client = _get_openai_client()
+
+    # Split audio if needed
+    chunk_paths = _split_audio_file(audio_path)
+    should_cleanup_chunks = len(chunk_paths) > 1
+
+    try:
+        transcripts = []
+
+        for i, chunk_path in enumerate(chunk_paths, 1):
+            if len(chunk_paths) > 1:
+                print(f"    Transcribing chunk {i}/{len(chunk_paths)}...")
+
+            with open(chunk_path, "rb") as audio_file:
+                transcript = client.audio.transcriptions.create(
+                    model=WHISPER_MODEL,
+                    file=audio_file,
+                    response_format="text"
+                )
+                transcripts.append(transcript)
+
+        # Combine transcripts with space separation
+        full_transcript = " ".join(transcripts)
+        return full_transcript
+
+    except Exception as e:
+        raise Exception(f"Whisper API error: {e}")
+
+    finally:
+        # Clean up chunk files if we created them
+        if should_cleanup_chunks:
+            for chunk_path in chunk_paths:
+                if chunk_path.exists():
+                    try:
+                        os.unlink(chunk_path)
+                    except Exception:
+                        pass
+
+            # Try to remove the temp directory
+            try:
+                if chunk_paths and chunk_paths[0].parent.exists():
+                    os.rmdir(chunk_paths[0].parent)
+            except Exception:
+                pass
+
+
+def _load_mp4s(data_dir: Path) -> List[Document]:
+    """Load all MP4 files from the data directory and transcribe audio.
+
+    Args:
+        data_dir: Directory containing MP4 files
+
+    Returns:
+        List of Document objects with transcribed text and metadata
+    """
+    mp4_files = list(data_dir.glob("*.mp4")) + list(data_dir.glob("*.MP4"))
+    if not mp4_files:
+        warnings.warn(f"No MP4 files found in {data_dir}")
+        return []
+
+    all_documents = []
+
+    print(f"\nProcessing {len(mp4_files)} MP4 file(s)...")
+    for mp4_path in tqdm(mp4_files, desc="Transcribing MP4s"):
+        temp_audio_path = None
+        try:
+            # Create temporary WAV file
+            with tempfile.NamedTemporaryFile(
+                suffix=".wav", delete=False
+            ) as temp_file:
+                temp_audio_path = Path(temp_file.name)
+
+            # Step 1: Extract audio from MP4
+            print(f"\n  Extracting audio from {mp4_path.name}...")
+            _extract_audio_from_mp4(mp4_path, temp_audio_path)
+
+            # Step 2: Transcribe with Whisper
+            print(f"  Transcribing {mp4_path.name} with Whisper...")
+            transcript = _transcribe_audio_with_whisper(temp_audio_path)
+
+            # Step 3: Create Document with metadata
+            doc = Document(
+                page_content=transcript,
+                metadata={
+                    "source": mp4_path.name,
+                    "source_type": "mp4",
+                    "transcription_length": len(transcript),
+                },
+            )
+            all_documents.append(doc)
+
+            print(f"  ✓ {mp4_path.name}: transcribed {len(transcript)} characters")
+
+        except Exception as e:
+            warnings.warn(f"Error processing MP4 {mp4_path.name}: {e}")
+            continue
+
+        finally:
+            # Clean up temporary audio file
+            if temp_audio_path and temp_audio_path.exists():
+                try:
+                    os.unlink(temp_audio_path)
+                except Exception:
+                    pass
+
+    return all_documents
+
+
+# ============================================================================
+# Part C: Text Chunking
+# ============================================================================
+
+
+def _chunk_documents(documents: List[Document]) -> List[Document]:
+    """Split documents into smaller chunks for embedding.
+
+    Args:
+        documents: List of Document objects to chunk
+
+    Returns:
+        List of chunked Document objects with preserved metadata
+    """
+    if not documents:
+        return []
+
+    # Use LangChain's RecursiveCharacterTextSplitter
+    # Splits at natural boundaries: paragraphs, sentences, words
+    text_splitter = RecursiveCharacterTextSplitter(
+        chunk_size=CHUNK_SIZE,
+        chunk_overlap=CHUNK_OVERLAP,
+        length_function=len,
+        separators=["\n\n", "\n", ". ", " ", ""],
+    )
+
+    print(f"\nChunking {len(documents)} documents...")
+    chunked_documents = []
+
+    for doc in tqdm(documents, desc="Chunking documents"):
+        try:
+            # Split document into chunks
+            chunks = text_splitter.split_documents([doc])
+
+            # Add chunk index to metadata
+            for i, chunk in enumerate(chunks):
+                chunk.metadata["chunk_id"] = f"{chunk.metadata.get('source', 'unknown')}_{i}"
+                chunk.metadata["chunk_index"] = i
+
+            chunked_documents.extend(chunks)
+
+        except Exception as e:
+            warnings.warn(f"Error chunking document from {doc.metadata.get('source')}: {e}")
+            continue
+
+    print(f"  ✓ Created {len(chunked_documents)} chunks from {len(documents)} documents")
+    return chunked_documents
+
+
+# ============================================================================
+# Part D: Pipeline Orchestration
+# ============================================================================
+
+
+def load_and_chunk_documents(data_dir: Optional[Path] = None) -> List[Document]:
+    """Main pipeline: Load PDFs and MP4s, transcribe audio, and chunk all text.
+
+    This is the primary entry point for data ingestion. It:
+    1. Loads all PDF files and extracts text
+    2. Loads all MP4 files, extracts audio, and transcribes with Whisper
+    3. Chunks all text into semantically meaningful pieces
+    4. Returns list of Document objects ready for embedding
+
+    Args:
+        data_dir: Directory containing source files (default: config.DATA_DIR)
+
+    Returns:
+        List of chunked Document objects with metadata
+
+    Raises:
+        ValueError: If data directory doesn't exist or is empty
+    """
+    # Use configured data directory if not provided
+    if data_dir is None:
+        data_dir = DATA_DIR
+
+    # Validate data directory
+    if not data_dir.exists():
+        raise ValueError(
+            f"Data directory does not exist: {data_dir}\n"
+            f"Please create it and add PDF and MP4 files."
+        )
+
+    # Check for supported files
+    pdf_files = list(data_dir.glob("*.pdf"))
+    mp4_files = list(data_dir.glob("*.mp4")) + list(data_dir.glob("*.MP4"))
+
+    if not pdf_files and not mp4_files:
+        raise ValueError(
+            f"No PDF or MP4 files found in {data_dir}\n"
+            f"Please add source documents to process."
+        )
+
+    print("=" * 60)
+    print("RAG CHATBOT - DATA INGESTION PIPELINE")
+    print("=" * 60)
+    print(f"Data directory: {data_dir.absolute()}")
+    print(f"Found: {len(pdf_files)} PDF(s), {len(mp4_files)} MP4(s)")
+    print(f"Chunk size: {CHUNK_SIZE}, Overlap: {CHUNK_OVERLAP}")
+    print("=" * 60)
+
+    all_documents = []
+
+    # Load PDFs
+    try:
+        pdf_docs = _load_pdfs(data_dir)
+        all_documents.extend(pdf_docs)
+    except Exception as e:
+        warnings.warn(f"Error loading PDFs: {e}")
+
+    # Load and transcribe MP4s
+    try:
+        mp4_docs = _load_mp4s(data_dir)
+        all_documents.extend(mp4_docs)
+    except Exception as e:
+        warnings.warn(f"Error processing MP4s: {e}")
+
+    # Check if we loaded any documents
+    if not all_documents:
+        raise ValueError(
+            "No documents were successfully loaded. "
+            "Check warnings above for errors."
+        )
+
+    # Chunk all documents
+    chunked_docs = _chunk_documents(all_documents)
+
+    print("\n" + "=" * 60)
+    print("INGESTION COMPLETE")
+    print("=" * 60)
+    print(f"Total documents loaded: {len(all_documents)}")
+    print(f"Total chunks created: {len(chunked_docs)}")
+    print(f"Average chunk size: {sum(len(d.page_content) for d in chunked_docs) / len(chunked_docs):.0f} chars")
+    print("=" * 60)
+
+    return chunked_docs
+
+
+# ============================================================================
+# Testing / Demo
+# ============================================================================
+
+
+if __name__ == "__main__":
+    """Test the data loading pipeline."""
+    try:
+        # Load and chunk all documents
+        documents = load_and_chunk_documents()
+
+        # Display sample chunks
+        print("\n" + "=" * 60)
+        print("SAMPLE CHUNKS")
+        print("=" * 60)
+
+        for i, doc in enumerate(documents[:3], 1):
+            print(f"\nChunk {i}:")
+            print(f"  Source: {doc.metadata.get('source')}")
+            print(f"  Type: {doc.metadata.get('source_type')}")
+            print(f"  Chunk ID: {doc.metadata.get('chunk_id')}")
+            print(f"  Length: {len(doc.page_content)} chars")
+            print(f"  Preview: {doc.page_content[:200]}...")
+
+        print("\n✓ Data loading pipeline test completed successfully!")
+
+    except Exception as e:
+        print(f"\n✗ Error: {e}")
+        import traceback
+        traceback.print_exc()
