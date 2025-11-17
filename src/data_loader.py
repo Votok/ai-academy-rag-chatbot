@@ -543,15 +543,30 @@ def _chunk_documents(documents: List[Document]) -> List[Document]:
     print(f"\nChunking {len(documents)} documents...")
     chunked_documents = []
 
+    # Track global chunk counter per source file
+    source_counters = {}
+
     for doc in tqdm(documents, desc="Chunking documents"):
         try:
             # Split document into chunks
             chunks = text_splitter.split_documents([doc])
 
-            # Add chunk index to metadata
+            # Get source filename from the document
+            source = doc.metadata.get('source', 'unknown')
+
+            # Initialize counter for this source if not exists
+            if source not in source_counters:
+                source_counters[source] = 0
+
+            # Add chunk index to metadata with global counter
             for i, chunk in enumerate(chunks):
-                chunk.metadata["chunk_id"] = f"{chunk.metadata.get('source', 'unknown')}_{i}"
-                chunk.metadata["chunk_index"] = i
+                # Use global counter for chunk_id (unique across all pages)
+                chunk.metadata["chunk_id"] = f"{source}_{source_counters[source]}"
+                chunk.metadata["chunk_index"] = source_counters[source]
+                chunk.metadata["chunk_index_in_page"] = i  # Keep local index for debugging
+
+                # Increment global counter for this source
+                source_counters[source] += 1
 
             chunked_documents.extend(chunks)
 
