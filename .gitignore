@@ -208,4 +208,5 @@ __marimo__/
 
 data/
 data/transcripts/  # Cached MP4 transcriptions (regenerated from source files)
+data/transcripts/.partial/  # Partial transcript chunks (progress saving)
 .DS_Store

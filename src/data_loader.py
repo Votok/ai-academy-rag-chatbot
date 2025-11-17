@@ -36,7 +36,10 @@ def _get_openai_client() -> OpenAI:
     """Get or create OpenAI client (lazy initialization)."""
     global _openai_client
     if _openai_client is None:
-        _openai_client = OpenAI(api_key=OPENAI_API_KEY)
+        _openai_client = OpenAI(
+            api_key=OPENAI_API_KEY,
+            timeout=300.0,  # 5 minute timeout for large audio files
+        )
     return _openai_client
 
 
@@ -102,6 +105,87 @@ def _save_transcript_cache(cache_path: Path, transcript: str) -> None:
             f.write(transcript)
     except Exception as e:
         warnings.warn(f"Error saving transcript cache {cache_path}: {e}")
+
+
+def _get_partial_transcript_dir(data_dir: Path) -> Path:
+    """Get the directory for partial transcript chunks.
+
+    Args:
+        data_dir: Data directory
+
+    Returns:
+        Path to partial transcripts directory
+    """
+    return data_dir / "transcripts" / ".partial"
+
+
+def _save_partial_transcript(mp4_path: Path, data_dir: Path, chunk_index: int, transcript: str) -> None:
+    """Save a partial transcript chunk.
+
+    Args:
+        mp4_path: Path to the MP4 file
+        data_dir: Data directory
+        chunk_index: Index of the chunk (0-based)
+        transcript: Transcript text for this chunk
+    """
+    try:
+        partial_dir = _get_partial_transcript_dir(data_dir)
+        partial_dir.mkdir(parents=True, exist_ok=True)
+
+        partial_path = partial_dir / f"{mp4_path.stem}_chunk_{chunk_index}.txt"
+        with open(partial_path, "w", encoding="utf-8") as f:
+            f.write(transcript)
+    except Exception as e:
+        warnings.warn(f"Error saving partial transcript: {e}")
+
+
+def _load_partial_transcripts(mp4_path: Path, data_dir: Path, num_chunks: int) -> Optional[List[str]]:
+    """Load partial transcripts if all chunks exist.
+
+    Args:
+        mp4_path: Path to the MP4 file
+        data_dir: Data directory
+        num_chunks: Expected number of chunks
+
+    Returns:
+        List of transcript chunks if all exist, None otherwise
+    """
+    try:
+        partial_dir = _get_partial_transcript_dir(data_dir)
+        if not partial_dir.exists():
+            return None
+
+        transcripts = []
+        for i in range(num_chunks):
+            partial_path = partial_dir / f"{mp4_path.stem}_chunk_{i}.txt"
+            if not partial_path.exists():
+                return None
+
+            with open(partial_path, "r", encoding="utf-8") as f:
+                transcripts.append(f.read())
+
+        return transcripts
+    except Exception:
+        return None
+
+
+def _cleanup_partial_transcripts(mp4_path: Path, data_dir: Path) -> None:
+    """Clean up partial transcript files for a given MP4.
+
+    Args:
+        mp4_path: Path to the MP4 file
+        data_dir: Data directory
+    """
+    try:
+        partial_dir = _get_partial_transcript_dir(data_dir)
+        if not partial_dir.exists():
+            return
+
+        # Remove all partial files for this MP4
+        for partial_file in partial_dir.glob(f"{mp4_path.stem}_chunk_*.txt"):
+            partial_file.unlink()
+    except Exception as e:
+        warnings.warn(f"Error cleaning up partial transcripts: {e}")
 
 
 # ============================================================================
@@ -181,12 +265,12 @@ def _extract_audio_from_mp4(mp4_path: Path, output_path: Path) -> None:
         raise Exception(f"ffmpeg error: {e.stderr.decode()}")
 
 
-def _split_audio_file(audio_path: Path, chunk_duration_seconds: int = 600) -> List[Path]:
+def _split_audio_file(audio_path: Path, chunk_duration_seconds: int = 300) -> List[Path]:
     """Split large audio file into smaller chunks.
 
     Args:
         audio_path: Path to audio file to split
-        chunk_duration_seconds: Duration of each chunk in seconds (default: 10 minutes)
+        chunk_duration_seconds: Duration of each chunk in seconds (default: 5 minutes)
 
     Returns:
         List of paths to audio chunk files
@@ -248,13 +332,22 @@ def _split_audio_file(audio_path: Path, chunk_duration_seconds: int = 600) -> Li
         raise Exception(f"Error splitting audio: {e}")
 
 
-def _transcribe_audio_with_whisper(audio_path: Path) -> str:
+def _transcribe_audio_with_whisper(
+    audio_path: Path,
+    source_filename: str = None,
+    mp4_path: Path = None,
+    data_dir: Path = None
+) -> str:
     """Transcribe audio file using OpenAI Whisper API.
 
     Handles large files by automatically splitting them into chunks.
+    Saves progress for each chunk to allow resuming after failures.
 
     Args:
         audio_path: Path to audio file (WAV, MP3, etc.)
+        source_filename: Original filename for error messages (optional)
+        mp4_path: Path to original MP4 file for progress saving (optional)
+        data_dir: Data directory for progress saving (optional)
 
     Returns:
         Transcribed text
@@ -268,6 +361,15 @@ def _transcribe_audio_with_whisper(audio_path: Path) -> str:
     chunk_paths = _split_audio_file(audio_path)
     should_cleanup_chunks = len(chunk_paths) > 1
 
+    # Check for existing partial transcripts if we have MP4 info
+    if mp4_path and data_dir and len(chunk_paths) > 1:
+        partial_transcripts = _load_partial_transcripts(mp4_path, data_dir, len(chunk_paths))
+        if partial_transcripts:
+            print(f"    Found {len(partial_transcripts)} cached chunk(s), using saved progress")
+            full_transcript = " ".join(partial_transcripts)
+            _cleanup_partial_transcripts(mp4_path, data_dir)
+            return full_transcript
+
     try:
         transcripts = []
 
@@ -275,20 +377,43 @@ def _transcribe_audio_with_whisper(audio_path: Path) -> str:
             if len(chunk_paths) > 1:
                 print(f"    Transcribing chunk {i}/{len(chunk_paths)}...")
 
-            with open(chunk_path, "rb") as audio_file:
-                transcript = client.audio.transcriptions.create(
-                    model=WHISPER_MODEL,
-                    file=audio_file,
-                    response_format="text"
+            try:
+                with open(chunk_path, "rb") as audio_file:
+                    transcript = client.audio.transcriptions.create(
+                        model=WHISPER_MODEL,
+                        file=audio_file,
+                        response_format="text"
+                    )
+                    transcripts.append(transcript)
+
+                # Save partial transcript if we have MP4 info
+                if mp4_path and data_dir and len(chunk_paths) > 1:
+                    _save_partial_transcript(mp4_path, data_dir, i - 1, transcript)
+
+            except Exception as chunk_error:
+                # Provide detailed error message about which chunk failed
+                source_info = f" for {source_filename}" if source_filename else ""
+                raise Exception(
+                    f"Whisper API error on chunk {i}/{len(chunk_paths)}{source_info}: {chunk_error}\n"
+                    f"Suggestion: This may be a transient API issue (502 errors are common with OpenAI). "
+                    f"Try running the script again - chunks 1-{i-1} are cached and will be reused."
                 )
-                transcripts.append(transcript)
 
         # Combine transcripts with space separation
         full_transcript = " ".join(transcripts)
+
+        # Clean up partial transcripts on success
+        if mp4_path and data_dir:
+            _cleanup_partial_transcripts(mp4_path, data_dir)
+
         return full_transcript
 
     except Exception as e:
-        raise Exception(f"Whisper API error: {e}")
+        # Re-raise if already formatted, otherwise wrap
+        if "Whisper API error on chunk" in str(e):
+            raise
+        source_info = f" for {source_filename}" if source_filename else ""
+        raise Exception(f"Whisper API error{source_info}: {e}")
 
     finally:
         # Clean up chunk files if we created them
@@ -352,7 +477,12 @@ def _load_mp4s(data_dir: Path) -> List[Document]:
 
                 # Step 2: Transcribe with Whisper
                 print(f"  Transcribing {mp4_path.name} with Whisper...")
-                transcript = _transcribe_audio_with_whisper(temp_audio_path)
+                transcript = _transcribe_audio_with_whisper(
+                    temp_audio_path,
+                    source_filename=mp4_path.name,
+                    mp4_path=mp4_path,
+                    data_dir=data_dir
+                )
 
                 # Step 3: Save transcript to cache
                 _save_transcript_cache(cache_path, transcript)
