@@ -7,9 +7,11 @@ A Python 3.12-based chatbot application using Retrieval-Augmented Generation (RA
 - **Document Processing**: Load and process PDF documents and MP4 video transcripts
 - **Vector Embeddings**: Generate and store embeddings using OpenAI for efficient retrieval
 - **ChromaDB Integration**: Persistent vector database for semantic search
-- **RAG Pipeline**: Retrieve relevant context and generate responses using OpenAI
-- **Voice Integration**: Whisper support for audio transcription from MP4 files
-- **Smart Caching**: Transcript caching to avoid re-processing videos
+- **RAG Pipeline**: Retrieve relevant context and generate responses using OpenAI GPT
+- **Audio Transcription**: OpenAI Whisper API integration for MP4 audio transcription
+- **Smart Caching**: Transcript caching with modification tracking and partial transcript resume capability
+- **Query Logging**: Automatic logging of all queries and responses to `queries.log` with timestamps
+- **CLI Interface**: Rich terminal interface with progress bars and formatted output using typer and rich
 
 ## Quick Start
 
@@ -40,10 +42,11 @@ ai-academy-rag-chatbot/
 ├── src/                    # Source code modules
 │   ├── __init__.py
 │   ├── build_index.py     # Index building CLI
-│   ├── chatbot.py         # Main chatbot logic (Phase 6+)
+│   ├── chatbot.py         # Main chatbot logic with RAG pipeline
 │   ├── config.py          # Configuration management
 │   ├── data_loader.py     # Document loading and processing
 │   ├── embeddings.py      # Vector embeddings handling
+│   ├── prompts.py         # Prompt templates for RAG
 │   └── retriever.py       # Document retrieval logic
 ├── data/                   # Store your documents here (PDFs, MP4s)
 │   └── transcripts/       # Cached MP4 transcripts
@@ -51,7 +54,7 @@ ai-academy-rag-chatbot/
 ├── .env.example           # Environment variables template
 ├── .gitignore            # Git ignore rules
 ├── COMMANDS.md           # Complete command reference
-├── PHASE_PLAN.md         # Implementation roadmap
+├── queries.log           # Query history log (auto-generated)
 ├── requirements.txt      # Python dependencies
 └── README.md             # This file
 ```
@@ -81,15 +84,15 @@ Create and activate a virtual environment to isolate project dependencies:
 **On Linux/MacOS:**
 
 ```bash
-python3 -m venv venv
-source venv/bin/activate
+python3 -m venv .venv
+source .venv/bin/activate
 ```
 
 **On Windows:**
 
 ```bash
-python -m venv venv
-venv\Scripts\activate
+python -m venv .venv
+.venv\Scripts\activate
 ```
 
 ### 3. Install Dependencies
@@ -103,12 +106,15 @@ pip install -r requirements.txt
 This will install:
 
 - `langchain` - Framework for building LLM applications
-- `openai` - OpenAI API client
+- `openai` - OpenAI API client (includes Whisper API access)
 - `chromadb` - Vector database for embeddings
-- `openai-whisper` - Speech recognition
 - `pypdf` - PDF document processing
 - `tiktoken` - Token counting for OpenAI models
 - `python-dotenv` - Environment variable management
+- `typer` - CLI framework for command-line interface
+- `rich` - Rich terminal formatting and progress bars
+- `tqdm` - Progress bars for data processing
+- `ffmpeg-python` - Audio extraction from MP4 files
 
 ### 4. Configure Environment Variables
 
@@ -179,17 +185,28 @@ Processing 1 MP4 file(s)...
 
 ### Querying the Chatbot
 
-**⚠️ Coming Soon (Phase 6+)** - Chatbot interface is not yet implemented.
-
-Once complete, you'll be able to use:
+After building the index, you can query the chatbot:
 
 ```bash
-# Single query mode
-python -m src.chatbot query "What is a vector database?"
+# Ask a question (default command)
+python -m src.chatbot "What is a vector database?"
 
-# Interactive chat mode
-python -m src.chatbot chat
+# Or use explicit query command
+python -m src.chatbot query "What is RAG?"
+
+# Retrieve more context chunks
+python -m src.chatbot query "How does retrieval work?" --top-k 10
+
+# Use custom log file
+python -m src.chatbot query "Explain embeddings" --log-file my_queries.log
 ```
+
+The chatbot will:
+1. Retrieve the most relevant document chunks
+2. Generate an answer using GPT with context
+3. Display the answer with source citations
+4. Show relevance scores for retrieved chunks
+5. Log the full query and response to `queries.log`
 
 ### Testing Individual Components
 
@@ -217,9 +234,43 @@ EMBEDDING_MODEL=text-embedding-3-large python -m src.build_index build --rebuild
 TOP_K=10 python -c "from src.retriever import retrieve_relevant_chunks; ..."
 ```
 
+### Query Logging
+
+All chatbot queries are automatically logged to `queries.log` in the project root directory. Each log entry includes:
+
+- **Timestamp**: When the query was made
+- **Question**: The user's original question
+- **Answer**: The generated response
+- **Sources**: List of source files used (PDFs and MP4s)
+- **Retrieved Chunks**: Details of each chunk including relevance scores
+- **Metadata**: Model used and time elapsed
+
+**Example log entry format:**
+```
+================================================================================
+TIMESTAMP: 2025-11-18 14:30:22
+================================================================================
+QUESTION: What is RAG?
+...
+ANSWER:
+Retrieval-Augmented Generation (RAG) is...
+...
+SOURCES (2 file(s)):
+  - lecture_notes.pdf
+  - course_video.mp4
+...
+```
+
+**Custom log file:**
+```bash
+python -m src.chatbot query "question" --log-file custom_queries.log
+```
+
 📘 **For the complete command reference with troubleshooting guides, see [COMMANDS.md](COMMANDS.md)**
 
 ## Common Commands
+
+### Index Management
 
 | Command | Purpose |
 |---------|---------|
@@ -227,6 +278,16 @@ TOP_K=10 python -c "from src.retriever import retrieve_relevant_chunks; ..."
 | `python -m src.build_index stats` | Show index statistics |
 | `python -m src.build_index build --rebuild` | Rebuild index from scratch |
 | `python -m src.build_index clear` | Delete all indexed documents |
+
+### Chatbot Queries
+
+| Command | Purpose |
+|---------|---------|
+| `python -m src.chatbot "question"` | Ask a question (default command) |
+| `python -m src.chatbot query "question"` | Ask a question (explicit) |
+| `python -m src.chatbot query "question" --top-k 10` | Retrieve more context chunks |
+| `python -m src.chatbot query "question" --log-file path` | Use custom log file |
+| `python -m src.chatbot build-index` | Build index via chatbot CLI |
 
 ## Contributing
 

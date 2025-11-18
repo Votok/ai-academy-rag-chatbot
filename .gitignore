@@ -213,7 +213,4 @@ data/transcripts/.partial/  # Partial transcript chunks (progress saving)
 # ChromaDB vector database storage (regenerated from source documents)
 embeddings/
 
-# Local planning documents
-PHASE_PLAN_LOCAL.md
-
 .DS_Store
