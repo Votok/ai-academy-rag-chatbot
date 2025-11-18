@@ -311,8 +311,6 @@ def _log_query_to_file(result: Dict, elapsed_time: float, log_file: Path = Path(
                     chunk_info = source
 
                 f.write(f"  [{i}] {chunk_info} - Score: {score:.4f}\n")
-                f.write(f"      {chunk.page_content}\n")
-                f.write("\n")
 
             # Metadata
             f.write(f"MODEL: {result['model']}\n")

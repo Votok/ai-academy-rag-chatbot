@@ -1,0 +1,124 @@
+
+================================================================================
+TIMESTAMP: 2025-11-18 13:14:15
+================================================================================
+QUESTION: What are the production 'Do's' for RAG?
+
+ANSWER:
+--------------------------------------------------------------------------------
+I don't have enough information in the course materials to answer that question. The available context doesn't cover this topic.
+--------------------------------------------------------------------------------
+
+SOURCES (1 file(s)):
+  - Databases for GenAI.pdf
+
+RETRIEVED CHUNKS (5 chunk(s)):
+
+  [1] Databases for GenAI.pdf (page 2) - Score: 0.5534
+  [2] Databases for GenAI.pdf (page 9) - Score: 0.5367
+  [3] Databases for GenAI.pdf (page 14) - Score: 0.5291
+  [4] Databases for GenAI.pdf (page 11) - Score: 0.4867
+  [5] Databases for GenAI.pdf (page 17) - Score: 0.4775
+MODEL: gpt-4
+TIME ELAPSED: 2.69s
+================================================================================
+
+================================================================================
+TIMESTAMP: 2025-11-18 13:15:01
+================================================================================
+QUESTION: What is the difference between standard retrieval and the ColPali approach?
+
+ANSWER:
+--------------------------------------------------------------------------------
+The standard retrieval system typically uses Optical Character Recognition (OCR) to describe and store information from PDF documents. It retrieves relevant information based on this OCR processed data.
+
+On the other hand, the ColPali approach, as explained in the Databases for GenAI.pdf and the video transcript, treats pages as images without using OCR. It uses the PaliGemma-3B Vision Language Model and ColBERT late interaction matching to transform patches of the page into embeddings. These embeddings are then used for retrieval, instead of text processed by OCR.
+
+The video transcript also highlights that the ColPali approach showed better results, approximately 15% improvement over the standard retrieval system using OCR. However, it's noted that the OCR approach is still predominantly used.
+--------------------------------------------------------------------------------
+
+SOURCES (2 file(s)):
+  - 2 part Databases for GenAI.mp4
+  - Databases for GenAI.pdf
+
+RETRIEVED CHUNKS (5 chunk(s)):
+
+  [1] Databases for GenAI.pdf (page 13) - Score: 0.5080
+  [2] 2 part Databases for GenAI.mp4 (transcript) - Score: 0.4677
+  [3] 2 part Databases for GenAI.mp4 (transcript) - Score: 0.4459
+  [4] 2 part Databases for GenAI.mp4 (transcript) - Score: 0.4416
+  [5] 2 part Databases for GenAI.mp4 (transcript) - Score: 0.4365
+MODEL: gpt-4
+TIME ELAPSED: 13.46s
+================================================================================
+
+================================================================================
+TIMESTAMP: 2025-11-18 13:15:36
+================================================================================
+QUESTION: Why is hybrid search better than vector-only search?
+
+ANSWER:
+--------------------------------------------------------------------------------
+Hybrid search, which combines vector search and BM25 search, is better than vector-only search for several reasons. 
+
+Firstly, vector-only search can miss exact matches and acronyms, according to the "Databases for GenAI.pdf" (page 16). This is because vector search works by turning documents into vectors and then comparing the similarity of these vectors. As described on page 5 of the same PDF, it computes distances to all stored vectors based on a user query. However, this method does not necessarily account for exact matches or acronyms.
+
+On the other hand, BM25 search, which is part of the hybrid approach, calculates the number of words it finds in different documents and provides a statistical calculation of which documents to select, according to the video transcript. This can help capture more precise matches that might be missed by vector search alone.
+
+Furthermore, the use of a hybrid search results in a lower failure rate and improved accuracy. As stated on page 16 of the "Databases for GenAI.pdf", a hybrid approach combined with a reranker reduced the baseline failure rate by 67%, and increased the NDCG@3 score, a measure of ranking quality, by over 10% compared to a vector-only approach.
+
+However, it's important to note that while hybrid search can provide these benefits, it may not be suitable for all scenarios. For instance, it might not be the best choice in latency-critical situations or for simple retrieval tasks (Databases for GenAI.pdf, page 16).
+--------------------------------------------------------------------------------
+
+SOURCES (2 file(s)):
+  - 2 part Databases for GenAI.mp4
+  - Databases for GenAI.pdf
+
+RETRIEVED CHUNKS (5 chunk(s)):
+
+  [1] Databases for GenAI.pdf (page 16) - Score: 0.5745
+  [2] 2 part Databases for GenAI.mp4 (transcript) - Score: 0.5267
+  [3] Databases for GenAI.pdf (page 18) - Score: 0.5265
+  [4] Databases for GenAI.pdf (page 5) - Score: 0.5193
+  [5] Databases for GenAI.pdf (page 8) - Score: 0.5047
+MODEL: gpt-4
+TIME ELAPSED: 12.87s
+================================================================================
+
+================================================================================
+TIMESTAMP: 2025-11-18 13:23:47
+================================================================================
+QUESTION: What are the production 'Do's' for RAG?
+
+ANSWER:
+--------------------------------------------------------------------------------
+The production 'Do's' for RAG, as listed in the course materials, are:
+
+1. Use Hybrid Search (vector + BM25) as a baseline.
+2. Implement metadata filtering, which is critical for security.
+3. Monitor retrieval quality using metrics such as recall@k and NDCG. Tools suggested for this include TruLens, LangSmith, and DeepEval.
+4. Keep embeddings fresh by re-indexing on document changes.
+5. Evaluate systematically, avoiding a "vibes-based" approach.
+
+These practices are intended to ensure high-quality results, data security, and continual improvement in the production system (Databases for GenAI.pdf, page 18).
+--------------------------------------------------------------------------------
+
+SOURCES (2 file(s)):
+  - 2 part Databases for GenAI.mp4
+  - Databases for GenAI.pdf
+
+RETRIEVED CHUNKS (10 chunk(s)):
+
+  [1] Databases for GenAI.pdf (page 2) - Score: 0.5534
+  [2] Databases for GenAI.pdf (page 9) - Score: 0.5367
+  [3] Databases for GenAI.pdf (page 14) - Score: 0.5291
+  [4] Databases for GenAI.pdf (page 11) - Score: 0.4867
+  [5] Databases for GenAI.pdf (page 17) - Score: 0.4775
+  [6] Databases for GenAI.pdf (page 10) - Score: 0.4591
+  [7] Databases for GenAI.pdf (page 18) - Score: 0.4472
+  [8] Databases for GenAI.pdf (page 12) - Score: 0.4394
+  [9] Databases for GenAI.pdf (page 15) - Score: 0.4259
+  [10] 2 part Databases for GenAI.mp4 (transcript) - Score: 0.4154
+MODEL: gpt-4
+TIME ELAPSED: 9.44s
+================================================================================
