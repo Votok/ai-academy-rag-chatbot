@@ -377,56 +377,66 @@ for source in result['sources']:
 
 ---
 
-## Phase 7 – CLI Interface & Conversation Loop
+## Phase 7 – Simple CLI Interface & Logging
+
+**Status:** ✅ **COMPLETE**
 
 **Goal**
-Create a user-friendly command-line interface for interacting with the RAG chatbot.
+Create a simple command-line interface for building the index and querying the RAG chatbot, with verbose output and file logging.
+
+**Changes from Original Plan:**
+- ❌ No interactive chat loop/REPL
+- ❌ No special commands (/help, /sources, etc.)
+- ✅ Simple command-line argument interface
+- ✅ Verbose output with retrieved chunks
+- ✅ Automatic logging to file
 
 **Files Involved:**
-- `src/chatbot.py` – extend with CLI logic
-- New: `src/cli.py` (optional, for cleaner separation)
-- Update: `README.md` with usage instructions
+- Update: `src/chatbot.py` – add CLI logic with typer
+- New: `queries.log` – created at runtime for logging
 
 **Concrete Tasks:**
 
-### Part A: CLI Framework
-1. Use `typer` to create CLI commands:
+### Part A: CLI Commands
+1. Use `typer` to create two commands:
    - `build-index`: Rebuild the vector database from scratch
-   - `chat`: Start interactive chat session
-   - `query`: Single question mode (non-interactive)
-2. Add CLI options:
-   - `--verbose`: Show retrieved chunks and debug info
-   - `--top-k`: Override number of chunks to retrieve
-   - `--rebuild`: Force rebuild index before chatting
+   - Query mode (default): Takes question as command-line argument
 
-### Part B: Interactive Chat Loop
-1. Implement REPL-style conversation:
+   Usage:
+   ```bash
+   # Build index first
+   python -m src.chatbot build-index
+
+   # Query with questions
+   python -m src.chatbot "What is RAG?"
+   python -m src.chatbot "How does retrieval work?"
    ```
-   RAG Chatbot Ready! Type 'exit' to quit, 'help' for commands.
 
-   You: What is RAG?
-   Assistant: RAG stands for...
-   Sources: lecture_notes.pdf (page 3), video_transcript.txt
+### Part B: Query Output Format
+1. Display verbose output to console:
+   - User's question
+   - Generated answer
+   - Source files used (with metadata)
+   - Retrieved chunks with similarity scores (if available)
+   - Token count and timing info
+2. Format output clearly with separators for readability
 
-   You: How does it work?
-   Assistant: ...
-   ```
-2. Add special commands:
-   - `/help`: Show available commands
-   - `/sources`: Show all source documents indexed
-   - `/stats`: Show index statistics (# chunks, # sources)
-   - `/verbose`: Toggle verbose mode
-   - `/exit` or `Ctrl+C`: Exit gracefully
-3. Handle conversation context:
-   - For this homework, simple single-turn Q&A is sufficient
-   - Optionally maintain short conversation history (last 2-3 exchanges)
+### Part C: File Logging
+1. Automatically log all queries and results to `queries.log`
+2. Log format includes:
+   - Timestamp
+   - Question
+   - Answer
+   - Sources
+   - Retrieved chunks
+   - Separator between entries
+3. Append mode (don't overwrite previous logs)
 
-### Part C: Error Handling & UX
-1. Pretty print responses (consider using `rich` library for formatting)
-2. Show loading indicators during retrieval and generation
-3. Handle empty index gracefully (prompt user to run `build-index`)
-4. Validate OpenAI API key on startup
-5. Display helpful error messages for common issues
+### Part D: Error Handling
+1. Handle empty index (prompt to run `build-index`)
+2. Validate OpenAI API key on startup
+3. Clear error messages for common issues
+4. Graceful handling of API failures
 
 **Required Accounts/Credentials:**
 - **OpenAI API key** (for embeddings and completions)
@@ -436,18 +446,19 @@ Create a user-friendly command-line interface for interacting with the RAG chatb
 # Build index
 python -m src.chatbot build-index
 
-# Single query
-python -m src.chatbot query "What is RAG?"
+# Run several queries
+python -m src.chatbot "What is RAG?"
+python -m src.chatbot "How does it work?"
 
-# Interactive chat
-python -m src.chatbot chat
+# Check log file
+cat queries.log
 ```
 
 **Expected Output:**
-- Clean, intuitive CLI interface
-- Responsive interaction
+- Simple command-line interface
+- Verbose console output with all details
+- Automatic logging to queries.log
 - Clear error messages
-- Easy to use for testing
 
 ---
 
