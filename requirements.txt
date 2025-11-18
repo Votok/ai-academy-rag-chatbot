@@ -1,13 +1,29 @@
+# Core RAG Framework
 langchain
 langchain-community
 langchain-openai
+
+# OpenAI API
 openai
+
+# Vector Database
 chromadb
-openai-whisper
+
+# PDF Processing
 pypdf
+
+# Tokenization (required by OpenAI embeddings)
 tiktoken
+
+# Configuration
 python-dotenv
+
+# CLI Framework
 typer
-pydantic
+rich
+
+# Progress Bars
 tqdm
+
+# Audio/Video Processing
 ffmpeg-python
