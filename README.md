@@ -4,10 +4,34 @@ A Python 3.12-based chatbot application using Retrieval-Augmented Generation (RA
 
 ## Features
 
-- **Document Processing**: Load and process PDF documents
-- **Vector Embeddings**: Generate and store embeddings for efficient retrieval
+- **Document Processing**: Load and process PDF documents and MP4 video transcripts
+- **Vector Embeddings**: Generate and store embeddings using OpenAI for efficient retrieval
+- **ChromaDB Integration**: Persistent vector database for semantic search
 - **RAG Pipeline**: Retrieve relevant context and generate responses using OpenAI
-- **Voice Integration**: Whisper support for audio transcription
+- **Voice Integration**: Whisper support for audio transcription from MP4 files
+- **Smart Caching**: Transcript caching to avoid re-processing videos
+
+## Quick Start
+
+```bash
+# 1. Setup environment
+cp .env.example .env
+# Edit .env and add your OPENAI_API_KEY
+
+# 2. Activate virtual environment
+source .venv/bin/activate  # or .venv\Scripts\activate on Windows
+
+# 3. Add your documents to data/ directory
+# (PDFs and MP4 files)
+
+# 4. Build the search index
+python -m src.build_index build
+
+# 5. Verify index was created
+python -m src.build_index stats
+```
+
+📘 **For complete command reference, see [COMMANDS.md](COMMANDS.md)**
 
 ## Project Structure
 
@@ -15,14 +39,19 @@ A Python 3.12-based chatbot application using Retrieval-Augmented Generation (RA
 ai-academy-rag-chatbot/
 ├── src/                    # Source code modules
 │   ├── __init__.py
-│   ├── chatbot.py         # Main chatbot logic
-│   ├── embeddings.py      # Vector embeddings handling
+│   ├── build_index.py     # Index building CLI
+│   ├── chatbot.py         # Main chatbot logic (Phase 6+)
+│   ├── config.py          # Configuration management
 │   ├── data_loader.py     # Document loading and processing
+│   ├── embeddings.py      # Vector embeddings handling
 │   └── retriever.py       # Document retrieval logic
-├── data/                   # Store your documents here
-├── embeddings/            # Vector database storage
+├── data/                   # Store your documents here (PDFs, MP4s)
+│   └── transcripts/       # Cached MP4 transcripts
+├── embeddings/            # ChromaDB vector database storage
 ├── .env.example           # Environment variables template
 ├── .gitignore            # Git ignore rules
+├── COMMANDS.md           # Complete command reference
+├── PHASE_PLAN.md         # Implementation roadmap
 ├── requirements.txt      # Python dependencies
 └── README.md             # This file
 ```
@@ -31,6 +60,10 @@ ai-academy-rag-chatbot/
 
 - Python 3.12 or higher
 - OpenAI API key (get one from [OpenAI Platform](https://platform.openai.com/))
+- ffmpeg (for MP4 audio extraction)
+  - macOS: `brew install ffmpeg`
+  - Linux: `apt-get install ffmpeg` or `yum install ffmpeg`
+  - Windows: Download from [ffmpeg.org](https://ffmpeg.org/)
 
 ## Setup Instructions
 
@@ -118,7 +151,82 @@ See `.env.example` for a complete configuration template with detailed comments.
 
 ## Usage
 
-(Coming soon - implementation in progress)
+### Building the Index
+
+After adding your PDF and MP4 files to the `data/` directory:
+
+```bash
+# Build or update the index (incremental)
+python -m src.build_index build
+
+# Rebuild from scratch (if you changed chunking parameters)
+python -m src.build_index build --rebuild
+
+# Check index statistics
+python -m src.build_index stats
+```
+
+**Output example:**
+```
+Found 1 PDF(s) and 1 MP4(s)
+Loading 1 PDF file(s)...
+✓ Databases for GenAI.pdf: 20 pages
+Processing 1 MP4 file(s)...
+✓ Using cached transcript for video.mp4
+✓ Created 51 chunks from 21 documents
+✓ Successfully indexed 51/51 new documents
+```
+
+### Querying the Chatbot
+
+**⚠️ Coming Soon (Phase 6+)** - Chatbot interface is not yet implemented.
+
+Once complete, you'll be able to use:
+
+```bash
+# Single query mode
+python -m src.chatbot query "What is a vector database?"
+
+# Interactive chat mode
+python -m src.chatbot chat
+```
+
+### Testing Individual Components
+
+```bash
+# Test embeddings generation
+python -m src.embeddings
+
+# Test document loading and chunking
+python -m src.data_loader
+
+# Test retrieval from index
+python -m src.retriever
+```
+
+### Advanced Usage
+
+```bash
+# Use custom parameters (requires rebuild)
+CHUNK_SIZE=1500 CHUNK_OVERLAP=300 python -m src.build_index build --rebuild
+
+# Use different embedding model
+EMBEDDING_MODEL=text-embedding-3-large python -m src.build_index build --rebuild
+
+# Get more retrieval results
+TOP_K=10 python -c "from src.retriever import retrieve_relevant_chunks; ..."
+```
+
+📘 **For the complete command reference with troubleshooting guides, see [COMMANDS.md](COMMANDS.md)**
+
+## Common Commands
+
+| Command | Purpose |
+|---------|---------|
+| `python -m src.build_index build` | Build or update the search index |
+| `python -m src.build_index stats` | Show index statistics |
+| `python -m src.build_index build --rebuild` | Rebuild index from scratch |
+| `python -m src.build_index clear` | Delete all indexed documents |
 
 ## Contributing
 
