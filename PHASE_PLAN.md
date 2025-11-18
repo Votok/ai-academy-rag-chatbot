@@ -290,6 +290,8 @@ for i, doc in enumerate(results, 1):
 
 ## Phase 6 – LLM Integration & Prompt Engineering
 
+**Status:** ✅ **COMPLETE**
+
 **Goal**
 Integrate GPT-4 to generate answers using retrieved context, with carefully designed prompts.
 
@@ -548,11 +550,11 @@ Polish documentation and create a manual testing guide to validate the system th
 This 8-phase plan delivers a working RAG chatbot optimized for homework completion:
 
 1. ✅ **Phase 1**: Environment (mostly done)
-2. **Phase 2**: Configuration
-3. **Phase 3**: Data Loading + Chunking (PDF + MP4/Whisper)
-4. **Phase 4**: Embeddings + ChromaDB
-5. **Phase 5**: Retrieval
-6. **Phase 6**: LLM Integration
+2. ✅ **Phase 2**: Configuration
+3. ✅ **Phase 3**: Data Loading + Chunking (PDF + MP4/Whisper)
+4. ✅ **Phase 4**: Embeddings + ChromaDB
+5. ✅ **Phase 5**: Retrieval
+6. ✅ **Phase 6**: LLM Integration
 7. **Phase 7**: CLI
 8. **Phase 8**: Documentation + Testing
 

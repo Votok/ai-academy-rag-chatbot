@@ -14,9 +14,8 @@ cp .env.example .env
 # 2. Build the index (first time or when data changes)
 python -m src.build_index build
 
-# 3. Query the chatbot (Phase 6+, not implemented yet)
-python -m src.chatbot query "Your question here"
-python -m src.chatbot chat  # Interactive mode
+# 3. Query the chatbot
+python -m src.chatbot  # Single test query
 ```
 
 ---
@@ -667,21 +666,264 @@ git diff
 
 ---
 
-## ⏭️ Coming Soon (Phase 6+)
+## 💬 Chatbot Commands (Phase 6+)
 
-Once the chatbot interface is implemented, you'll be able to use:
-
+### Test Chatbot Module
 ```bash
-# Query mode (single question)
-python -m src.chatbot query "What is RAG?"
+python -m src.chatbot
+```
 
-# Interactive chat mode
-python -m src.chatbot chat
+**When to use:**
+- Quick test to verify chatbot is working
+- Tests with a sample query ("What is RAG?")
+- Validates end-to-end RAG pipeline
 
-# With options
-python -m src.chatbot query "Your question" --verbose --top-k 10
+**What it does:**
+- Retrieves relevant chunks for test query
+- Generates answer using GPT-4
+- Shows answer, sources, and metadata
+
+**Example output:**
+```
+============================================================
+Testing RAG Chatbot - generate_answer()
+============================================================
+
+Query: What is RAG?
+
+Answer:
+------------------------------------------------------------
+RAG (Retrieval-Augmented Generation) is a technique that...
+------------------------------------------------------------
+
+Sources used: lecture_notes.pdf, video_transcript.txt
+Model: gpt-4
+Retrieved chunks: 3
+
+✓ Test successful!
 ```
 
 ---
 
-**Last Updated:** Phase 4 Complete (Embeddings & ChromaDB Integration)
+### Query Programmatically (Python)
+
+#### Simple Query
+```python
+from src.chatbot import generate_answer
+
+result = generate_answer("What is RAG?")
+print(result["answer"])
+print("Sources:", result["sources"])
+```
+
+**When to use:**
+- Integrating chatbot into your own scripts
+- Batch processing multiple queries
+- Custom post-processing of results
+
+---
+
+#### Advanced Query with Options
+```python
+from src.chatbot import generate_answer
+
+result = generate_answer(
+    query="Explain vector embeddings",
+    top_k=10,           # Retrieve more chunks
+    min_score=0.7,      # Only use high-quality matches
+    temperature=0.5     # More focused/deterministic answers
+)
+
+print(result["answer"])
+
+# Access retrieved chunks
+for chunk in result["retrieved_chunks"]:
+    print(f"- {chunk.metadata['source']}: {chunk.metadata['score']:.3f}")
+```
+
+**Parameters:**
+- `query` (required): Your question as a string
+- `top_k` (optional): Number of chunks to retrieve (default: 5)
+- `min_score` (optional): Minimum similarity score (0.0-1.0)
+- `temperature` (optional): LLM creativity (0.0=focused, 1.0=creative, default: 0.7)
+
+**Returns dict with:**
+- `answer`: Generated response text
+- `sources`: List of source filenames used
+- `retrieved_chunks`: Full Document objects with metadata
+- `query`: Your original query
+- `model`: Model name used (e.g., "gpt-4")
+
+---
+
+### Using the RAGChatbot Class
+
+For maintaining state or custom configuration:
+
+```python
+from src.chatbot import RAGChatbot
+
+# Initialize once
+chatbot = RAGChatbot(
+    model="gpt-4",     # or "gpt-3.5-turbo" for faster/cheaper
+    top_k=5
+)
+
+# Ask multiple questions (reuses config)
+result1 = chatbot.generate_answer("What is RAG?")
+result2 = chatbot.generate_answer("How do vector databases work?")
+result3 = chatbot.generate_answer("Explain embeddings", top_k=10)
+```
+
+**When to use:**
+- Multiple queries in a session
+- Custom model configuration
+- Building your own chat interface
+
+---
+
+### Common Query Patterns
+
+#### Basic Question Answering
+```python
+from src.chatbot import generate_answer
+
+questions = [
+    "What is RAG?",
+    "How do embeddings work?",
+    "What is ChromaDB?",
+]
+
+for q in questions:
+    result = generate_answer(q)
+    print(f"Q: {q}")
+    print(f"A: {result['answer']}\n")
+```
+
+---
+
+#### Detailed Investigation (More Context)
+```python
+# Retrieve more chunks for complex questions
+result = generate_answer(
+    "Compare and contrast RAG vs fine-tuning",
+    top_k=10  # Get more context
+)
+```
+
+---
+
+#### High-Precision Answers (Strict Matching)
+```python
+# Only use very relevant chunks
+result = generate_answer(
+    "What is the exact formula for cosine similarity?",
+    min_score=0.8,      # High threshold
+    temperature=0.3     # Low temperature for precision
+)
+```
+
+---
+
+#### Creative Explanations
+```python
+# More creative/elaborative answers
+result = generate_answer(
+    "Explain RAG to a beginner",
+    temperature=0.9  # Higher temperature for creativity
+)
+```
+
+---
+
+### Inspecting Retrieved Context
+
+```python
+from src.chatbot import generate_answer
+
+result = generate_answer("What is RAG?", top_k=5)
+
+# See which sources were used
+print("Sources:", result["sources"])
+
+# Inspect retrieved chunks
+for i, chunk in enumerate(result["retrieved_chunks"], 1):
+    meta = chunk.metadata
+    print(f"\n{i}. {meta['source']} (score: {meta['score']:.3f})")
+    print(f"   {chunk.page_content[:150]}...")
+```
+
+**When to use:**
+- Debugging why an answer was generated
+- Verifying source quality
+- Understanding what context was provided to LLM
+
+---
+
+### Error Handling
+
+```python
+from src.chatbot import generate_answer
+
+try:
+    result = generate_answer("Your question")
+    print(result["answer"])
+except ValueError as e:
+    print(f"Query error: {e}")
+except Exception as e:
+    print(f"API error: {e}")
+```
+
+**Common errors:**
+- `ValueError`: Empty query or retrieval failed
+- `Exception`: OpenAI API failure (rate limit, network, invalid key)
+
+---
+
+## 🧪 Testing Chatbot
+
+### Verify Phase 6 Complete
+```bash
+# Test all Phase 6 components
+python -m src.prompts   # Should have no output (import test)
+python -m src.chatbot   # Should generate answer to test query
+```
+
+---
+
+### Custom Test Queries
+```bash
+python -c "
+from src.chatbot import generate_answer
+result = generate_answer('Your custom question here')
+print(result['answer'])
+print('\\nSources:', ', '.join(result['sources']))
+"
+```
+
+---
+
+## 📊 Quick Reference Update
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│  ESSENTIAL COMMANDS                                         │
+├─────────────────────────────────────────────────────────────┤
+│  Build index:           python -m src.build_index build     │
+│  Show stats:            python -m src.build_index stats     │
+│  Rebuild from scratch:  python -m src.build_index build -r  │
+│  Clear everything:      python -m src.build_index clear     │
+│                                                              │
+│  Test chatbot:          python -m src.chatbot               │
+│  Test embeddings:       python -m src.embeddings            │
+│  Test data loader:      python -m src.data_loader           │
+│  Test retriever:        python -m src.retriever             │
+│                                                              │
+│  Show config:           python -c "from src.config import \ │
+│                         print_config; print_config()"       │
+└─────────────────────────────────────────────────────────────┘
+```
+
+---
+
+**Last Updated:** Phase 6 Complete (LLM Integration & Prompt Engineering)
